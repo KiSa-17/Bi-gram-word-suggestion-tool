@@ -2,68 +2,80 @@ import re
 from collections import defaultdict, Counter
 
 
+TRAINING_FILE = "data/training.txt"
+USER_TRAINING_FILE = "data/user_training.txt"
+
+
 def load_text(filename):
-    with open(filename, "r", encoding="utf-8") as file:
-        return file.read()
+    try:
+        with open(filename, "r", encoding="utf-8") as file:
+            return file.read()
+    except FileNotFoundError:
+        return ""
+
+
+def save_user_text(text, filename):
+    with open(filename, "a", encoding="utf-8") as file:
+        file.write(text.strip() + "\n")
 
 
 def tokenize(text):
     text = text.lower()
 
-    words = re.findall(r"\b[a-zA-Z]+\b", text)
+    words = re.findall(
+        r"\b[a-zA-Z]+\b",
+        text
+    )
 
     return words
 
 
-def generate_bigrams(words):
-    bigrams = []
-
-    for i in range(len(words) - 1):
-        bigram = (words[i], words[i + 1])
-        bigrams.append(bigram)
-
-    return bigrams
-
-
-def build_bigram_model(bigrams):
+def build_model(words):
     bigram_counts = defaultdict(Counter)
-
-    for first_word, second_word in bigrams:
-        bigram_counts[first_word][second_word] += 1
-
-    return bigram_counts
-
-
-def build_word_counts(bigrams):
     word_counts = Counter()
 
-    for first_word, second_word in bigrams:
+    for i in range(len(words) - 1):
+        first_word = words[i]
+        second_word = words[i + 1]
+
+        bigram_counts[first_word][second_word] += 1
         word_counts[first_word] += 1
 
-    return word_counts
+    return bigram_counts, word_counts
 
 
-def calculate_probabilities(bigram_counts, word_counts):
-    probabilities = defaultdict(dict)
+def learn_from_text(text, bigram_counts, word_counts):
+    words = tokenize(text)
 
-    for first_word in bigram_counts:
-        total_count = word_counts[first_word]
+    for i in range(len(words) - 1):
+        first_word = words[i]
+        second_word = words[i + 1]
 
-        for second_word, count in bigram_counts[first_word].items():
-            probabilities[first_word][second_word] = (
-                count / total_count
-            )
-
-    return probabilities
+        bigram_counts[first_word][second_word] += 1
+        word_counts[first_word] += 1
 
 
-def suggest_words(word, probabilities, top_k=5):
+def suggest_words(
+    word,
+    bigram_counts,
+    word_counts,
+    top_k=5
+):
     word = word.lower()
 
-    if word not in probabilities:
+    if word not in bigram_counts:
         return []
 
-    suggestions = list(probabilities[word].items())
+    total_count = word_counts[word]
+
+    suggestions = []
+
+    for next_word, count in bigram_counts[word].items():
+        probability = count / total_count
+
+        suggestions.append(
+            (next_word, probability, count)
+        )
 
     suggestions.sort(
         key=lambda item: item[1],
@@ -73,80 +85,287 @@ def suggest_words(word, probabilities, top_k=5):
     return suggestions[:top_k]
 
 
-def main():
-    print("=" * 50)
-    print("       BIGRAM WORD SUGGESTION TOOL")
-    print("=" * 50)
+def show_suggestions(
+    word,
+    bigram_counts,
+    word_counts,
+    top_k=5
+):
+    suggestions = suggest_words(
+        word,
+        bigram_counts,
+        word_counts,
+        top_k
+    )
 
-    filename = "data/training.txt"
+    if not suggestions:
+        print(
+            f"\nNo suggestions found after "
+            f"'{word}'."
+        )
+        return
+
+    print(
+        f"\nSuggestions after "
+        f"'{word}':"
+    )
+
+    print("-" * 45)
+
+    for i, (next_word, probability, count) in enumerate(
+        suggestions,
+        start=1
+    ):
+        print(
+            f"{i}. {next_word:<20}"
+            f"{probability * 100:>7.2f}%"
+            f"  Count: {count}"
+        )
+
+    print("-" * 45)
+
+
+def show_model_statistics(
+    words,
+    bigram_counts,
+    word_counts
+):
+    vocabulary_size = len(set(words))
+
+    total_bigrams = sum(
+        sum(counter.values())
+        for counter in bigram_counts.values()
+    )
+
+    print("\nMODEL STATISTICS")
+    print("=" * 45)
+    print(f"Total words:       {len(words)}")
+    print(f"Vocabulary size:   {vocabulary_size}")
+    print(f"Total bigrams:     {total_bigrams}")
+    print("=" * 45)
+
+
+def show_bigrams(
+    word,
+    bigram_counts
+):
+    word = word.lower()
+
+    if word not in bigram_counts:
+        print(
+            f"\nNo bigrams found for "
+            f"'{word}'."
+        )
+        return
+
+    print(
+        f"\nWords occurring after "
+        f"'{word}':"
+    )
+
+    print("-" * 35)
+
+    results = bigram_counts[word].most_common()
+
+    for next_word, count in results:
+        print(
+            f"{next_word:<20} {count}"
+        )
+
+    print("-" * 35)
+
+
+def get_all_training_words():
+    initial_text = load_text(
+        TRAINING_FILE
+    )
+
+    user_text = load_text(
+        USER_TRAINING_FILE
+    )
+
+    combined_text = (
+        initial_text + "\n" + user_text
+    )
+
+    return tokenize(combined_text)
+
+
+def main():
+
+    print("=" * 60)
+    print("             BIGRAM WORD SUGGESTION TOOL")
+    print("=" * 60)
 
     print("\nLoading training data...")
 
-    text = load_text(filename)
+    initial_text = load_text(
+        TRAINING_FILE
+    )
 
-    words = tokenize(text)
+    user_text = load_text(
+        USER_TRAINING_FILE
+    )
 
-    print(f"Total words: {len(words)}")
-    print(f"Vocabulary size: {len(set(words))}")
+    combined_text = (
+        initial_text + "\n" + user_text
+    )
 
-    print("\nGenerating bigrams...")
+    if not combined_text.strip():
+        print(
+            "\nNo training data found."
+        )
+        print(
+            f"Please add text to:"
+            f"\n{TRAINING_FILE}"
+        )
+        return
 
-    bigrams = generate_bigrams(words)
+    words = tokenize(
+        combined_text
+    )
 
-    print(f"Total bigrams: {len(bigrams)}")
+    print(
+        f"Total training words: "
+        f"{len(words)}"
+    )
 
-    print("\nBuilding model...")
+    print(
+        f"Vocabulary size: "
+        f"{len(set(words))}"
+    )
 
-    bigram_counts = build_bigram_model(bigrams)
+    print("\nBuilding Bigram Model...")
 
-    word_counts = build_word_counts(bigrams)
-
-    probabilities = calculate_probabilities(
-        bigram_counts,
-        word_counts
+    bigram_counts, word_counts = build_model(
+        words
     )
 
     print("Model trained successfully!")
 
-    print("\nType 'exit' to quit.")
+    print("\n" + "=" * 60)
+
+    print("COMMANDS")
+    print("=" * 60)
+    print("/stats              Show model statistics")
+    print("/model <word>       Show learned bigrams")
+    print("/suggest <word>     Show suggestions")
+    print("/exit               Exit program")
+    print("=" * 60)
 
     while True:
-        sentence = input("\nEnter a sentence: ")
 
-        if sentence.lower() == "exit":
-            print("Goodbye!")
+        user_input = input(
+            "\nYou: "
+        ).strip()
+
+        if not user_input:
+            print(
+                "Please enter some text."
+            )
+            continue
+
+        # Exit command
+        if user_input.lower() == "/exit":
+            print(
+                "\nModel session ended."
+            )
             break
 
-        input_words = tokenize(sentence)
+        # Statistics command
+        if user_input.lower() == "/stats":
+            all_words = get_all_training_words()
 
-        if not input_words:
-            print("Please enter some text.")
+            show_model_statistics(
+                all_words,
+                bigram_counts,
+                word_counts
+            )
+
             continue
 
-        last_word = input_words[-1]
+        # Model inspection command
+        if user_input.lower().startswith("/model "):
 
-        suggestions = suggest_words(
-            last_word,
-            probabilities,
-            top_k=5
+            parts = user_input.split(
+                maxsplit=1
+            )
+
+            if len(parts) < 2:
+                print(
+                    "Usage: /model <word>"
+                )
+                continue
+
+            word = parts[1].strip()
+
+            show_bigrams(
+                word,
+                bigram_counts
+            )
+
+            continue
+
+        # Suggestion command
+        if user_input.lower().startswith("/suggest "):
+
+            parts = user_input.split(
+                maxsplit=1
+            )
+
+            if len(parts) < 2:
+                print(
+                    "Usage: /suggest <word>"
+                )
+                continue
+
+            word = parts[1].strip()
+
+            show_suggestions(
+                word,
+                bigram_counts,
+                word_counts
+            )
+
+            continue
+
+        # Tokenize user input
+        input_words = tokenize(
+            user_input
         )
 
-        if not suggestions:
+        if not input_words:
             print(
-                f"No suggestions found for '{last_word}'."
+                "No valid words found."
             )
             continue
 
-        print(f"\nSuggestions after '{last_word}':")
+        # Save user input permanently
+        save_user_text(
+            user_input,
+            USER_TRAINING_FILE
+        )
 
-        for i, (word, probability) in enumerate(
-            suggestions,
-            start=1
-        ):
-            print(
-                f"{i}. {word:<15}"
-                f"{probability * 100:.2f}%"
-            )
+        # Update model immediately
+        learn_from_text(
+            user_input,
+            bigram_counts,
+            word_counts
+        )
+
+        print(
+            "✓ Model updated with your input."
+        )
+
+        # Get the last word
+        last_word = input_words[-1]
+
+        # Generate suggestions
+        show_suggestions(
+            last_word,
+            bigram_counts,
+            word_counts
+        )
 
 
 if __name__ == "__main__":
